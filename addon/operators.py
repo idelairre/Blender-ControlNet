@@ -7,94 +7,22 @@ import tempfile
 import base64
 import requests
 import json
-import cv2
-
 import bpy
-import cv2
 import os
 
-headers = {
-    "User-Agent": "Blender/" + bpy.app.version_string,
-    "Accept": "*/*",
-    "Accept-Encoding": "gzip, deflate, br",
-}
+from . import constants
+from . import utils
+
 
 def get_sd_host():
     return "http://" + get_preferences().address + ':' + str(get_preferences().port) + "/sdapi/v1/"
 
-# Access addon preferences
+
 def get_preferences():
     preferences = bpy.context.preferences.addons['sd_blender'].preferences
     return preferences
 
-def generate_openpose_map(render):
-    # Set the path for the temporary image file
-    path_to_tmp_image = bpy.path.abspath("//tmp.png")
-    model_folder = get_preferences().openpose_models_folder
 
-    # Set up OpenPose
-    params = {"model_folder": model_folder, "image_path": bpy.data.images["Render Result"].filepath_raw}
-    op_wrapper = op.WrapperPython()
-    op_wrapper.configure(params)
-    op_wrapper.start()
-
-    # Load the image and process it with OpenPose
-    datum = op.Datum()
-    image_to_process = cv2.imread(params["image_path"])
-    datum.cvInputData = image_to_process
-    op_wrapper.emplaceAndPop([datum])
-
-    # Save the skeleton map to a specific file
-    bone_map_filename = f"bone{str(bpy.context.scene.frame_current).zfill(4)}.png"
-    bone_map_filepath = bpy.path.abspath("//" + bone_map_filename)
-    cv2.imwrite(bone_map_filepath, datum.cvOutputData)
-
-    # Delete the temporary image file
-    if os.path.exists(path_to_tmp_image):
-        os.remove(path_to_tmp_image)
-
-def create_compositor_nodes(scene):
-    scene.use_nodes = True
-    nodes = scene.node_tree.nodes
-    links = scene.node_tree.links
-
-    # clear all nodes to start clean
-    for node in nodes:
-        nodes.remove(node)
-
-    # create input render layer node
-    render_layer_node = nodes.new('CompositorNodeRLayers')
-    
-    for scene in bpy.data.scenes:
-        for view_layer in scene.view_layers:
-            view_layer.use_pass_z = True
-
-    # create output file node
-    output_node = nodes.new('CompositorNodeOutputFile')
-    output_node.base_path = get_preferences().output_folder
-    output_node.file_slots.new("depth")
-    output_node.file_slots.new("seg")
-
-    # create normalize node
-    normalize_node = nodes.new('CompositorNodeNormalize')
-
-    # create mix node
-    mix_node = nodes.new('CompositorNodeMixRGB')
-    mix_node.blend_type = 'MIX'
-    mix_node.inputs[1].default_value = (0, 0, 0, 1)  # color1 set to black
-    mix_node.inputs[2].default_value = (1, 1, 1, 1)  # color2 set to white
-
-    # link nodes together
-    links.new(render_layer_node.outputs[0], output_node.inputs['seg'])
-    links.new(render_layer_node.outputs['Depth'], normalize_node.inputs[0])
-    links.new(normalize_node.outputs[0], mix_node.inputs[0])
-    links.new(mix_node.outputs[0], output_node.inputs['depth'])
-    
-def check_compositor_and_create_nodes(context):
-    scene = context.scene
-    if not scene.use_nodes:
-        create_compositor_nodes(scene)
-        
 def to_dict(obj):
     if isinstance(obj, bpy.types.PropertyGroup):
         result = {}
@@ -114,6 +42,7 @@ def to_dict(obj):
     else:
         return obj
 
+
 def print_dict(d):
     def transform(d):
         if isinstance(d, dict):
@@ -125,6 +54,7 @@ def print_dict(d):
 
     transformed = transform(d)
     print(json.dumps(transformed, indent=3))
+
 
 @persistent
 def render_complete_handler(scene, context):
@@ -140,6 +70,48 @@ def render_complete_handler(scene, context):
 
 
 def send_to_api(scene):
+    models = {
+        "none": bpy.context.scene.controlnet.none,
+        "canny": bpy.context.scene.controlnet.canny,
+        "depth": bpy.context.scene.controlnet.depth,
+        "depth_leres": bpy.context.scene.controlnet.depth_leres,
+        "depth_leres++": bpy.context.scene.controlnet.depth_leres_plusplus,
+        "hed": bpy.context.scene.controlnet.hed,
+        "hed_safe": bpy.context.scene.controlnet.hed_safe,
+        "mediapipe_face": bpy.context.scene.controlnet.mediapipe_face,
+        "mlsd": bpy.context.scene.controlnet.mlsd,
+        "normal_map": bpy.context.scene.controlnet.normal_map,
+        "openpose": bpy.context.scene.controlnet.openpose,
+        "openpose_hand": bpy.context.scene.controlnet.openpose_hand,
+        "openpose_face": bpy.context.scene.controlnet.openpose_face,
+        "openpose_faceonly": bpy.context.scene.controlnet.openpose_faceonly,
+        "openpose_full": bpy.context.scene.controlnet.openpose_full,
+        "clip_vision": bpy.context.scene.controlnet.clip_vision,
+        "color": bpy.context.scene.controlnet.color,
+        "pidinet": bpy.context.scene.controlnet.pidinet,
+        "pidinet_safe": bpy.context.scene.controlnet.pidinet_safe,
+        "pidinet_sketch": bpy.context.scene.controlnet.pidinet_sketch,
+        "pidinet_scribble": bpy.context.scene.controlnet.pidinet_scribble,
+        "scribble_xdog": bpy.context.scene.controlnet.scribble_xdog,
+        "scribble_hed": bpy.context.scene.controlnet.scribble_hed,
+        "segmentation": bpy.context.scene.controlnet.segmentation,
+        "threshold": bpy.context.scene.controlnet.threshold,
+        "depth_zoe": bpy.context.scene.controlnet.depth_zoe,
+        "normal_bae": bpy.context.scene.controlnet.normal_bae,
+        "oneformer_coco": bpy.context.scene.controlnet.oneformer_coco,
+        "oneformer_ade20k": bpy.context.scene.controlnet.oneformer_ade20k,
+        "lineart": bpy.context.scene.controlnet.lineart,
+        "lineart_coarse": bpy.context.scene.controlnet.lineart_coarse,
+        "lineart_anime": bpy.context.scene.controlnet.lineart_anime,
+        "lineart_standard": bpy.context.scene.controlnet.lineart_standard,
+        "shuffle": bpy.context.scene.controlnet.shuffle,
+        "tile_resample": bpy.context.scene.controlnet.tile_resample,
+        "invert": bpy.context.scene.controlnet.invert,
+        "lineart_anime_denoise": bpy.context.scene.controlnet.lineart_anime_denoise,
+        "reference_only": bpy.context.scene.controlnet.reference_only,
+        "inpaint": bpy.context.scene.controlnet.inpaint
+    }
+
     # prepare filenames
     frame_num = f"{bpy.context.scene.frame_current}".zfill(4)
     timestamp = int(time.time())
@@ -147,44 +119,44 @@ def send_to_api(scene):
 
     # get the settings from the scene properties
     params = to_dict(bpy.context.scene.sdblender)
-    img_types = ["canny", "depth", "bone", "seg"]
-    
+    img_types = []
+
+    # get the controlnet properties
+    controlnet_props = bpy.context.scene.controlnet
+
+    # add selected items to img_types
+    if controlnet_props.controlnet1:
+        img_types.append(controlnet_props.controlnet1)
+    if controlnet_props.controlnet2:
+        img_types.append(controlnet_props.controlnet2)
+    if controlnet_props.controlnet3:
+        img_types.append(controlnet_props.controlnet3)
+
     if params.get('alwayson_scripts') is None:
-        params['alwayson_scripts'] = { "controlnet": {"args": []} }
-    
+        params['alwayson_scripts'] = {"controlnet": {"args": []}}
+
     def check_and_rename(img_type):
-        comp_output_filename = f"{img_type}{frame_num}.png"
         before_output_filename = f"{timestamp}-1-{img_type}-before.png"
-        if img_type != "bone" and img_type == "seg":
-            if not os.path.exists(get_asset_path(comp_output_filename)):
-                print(f"Couldn't find the {img_type} image at {get_asset_path(comp_output_filename)}.")
-            else:
-                os.rename(
-                    get_asset_path(comp_output_filename),
-                    get_asset_path(before_output_filename)
-                )
         return before_output_filename
 
     def prepare_cn_units(img_type, filename):
-        settings = to_dict(bpy.context.scene.controlnet).get(img_type)
-        # if img_type == "depth" or img_type == "seg":
-        #     with open(get_asset_path(filename), "rb") as file:
-        #         settings["input_image"] = base64.b64encode(file.read()).decode()
-        # else:
-        # save the render to a file to use as the input image
+        settings = to_dict(models.get(img_type))
+        print(settings)
         bpy.data.images["Render Result"].save_render(get_asset_path(filename))
         with open(get_asset_path(filename), "rb") as file:
-            settings["input_image"] = base64.b64encode(file.read()).decode()
-            settings["module"] = "canny" if img_type == "canny" else "openpose_full"
+            settings['input_image'] = base64.b64encode(file.read()).decode()
+            settings['module'] = img_type
+            print_dict(settings)
         return settings
-    
+
     for img_type in img_types:
-        if to_dict(bpy.context.scene.controlnet).get(f"is_send_{img_type}"):
+        if img_type != 'none':
             print('sending ', img_type, '...')
             filename = check_and_rename(img_type)
             cn_units = prepare_cn_units(img_type, filename)
-                
+
             params['alwayson_scripts']['controlnet']['args'].append(cn_units)
+            print_dict(params)
     # send to API
     output_file = actually_send_to_api(params, after_output_filename_prefix)
 
@@ -214,13 +186,15 @@ def send_to_api(scene):
     else:
         return False
 
+
 def actually_send_to_api(params, filename_prefix):
     # prepare server url
     server_url = get_sd_host() + "txt2img"
 
     # send API request
     try:
-        response = requests.post(server_url, json=params, headers=headers, timeout=1000)
+        response = requests.post(
+            server_url, json=params, headers=constants.headers, timeout=1000)
     except requests.exceptions.ConnectionError:
         print(f"The Automatic1111 server couldn't be found.")
     except requests.exceptions.MissingSchema:
@@ -240,7 +214,8 @@ def handle_api_success(response, filename_prefix):
     try:
         base64_img = response.json()["images"][0]
         output_file = create_temp_file(filename_prefix + "-")
-        img_binary = base64.b64decode(base64_img.replace("data:image/png;base64,", ""))
+        img_binary = base64.b64decode(
+            base64_img.replace("data:image/png;base64,", ""))
     except:
         print("Error while parsing response, creating temp file or decoding base64 image.")
         print("Response content: ")
@@ -257,22 +232,28 @@ def handle_api_success(response, filename_prefix):
 
     return output_file
 
+
 def handle_api_error(response):
     if response.status_code == 404:
         try:
             response_obj = response.json()
             detail = response_obj.get("detail")
             if detail == "Not Found":
-                print(f"It looks like the Automatic1111 server is running, but it's not in API mode. Full server response: {json.dumps(response_obj)}")
+                print(
+                    f"It looks like the Automatic1111 server is running, but it's not in API mode. Full server response: {json.dumps(response_obj)}")
             elif detail == "Sampler not found":
-                print(f"The sampler you selected is not available. Full server response: {json.dumps(response_obj)}")
+                print(
+                    f"The sampler you selected is not available. Full server response: {json.dumps(response_obj)}")
             else:
-                print(f"An error occurred in the Automatic1111 server. Full server response: {json.dumps(response_obj)}")
+                print(
+                    f"An error occurred in the Automatic1111 server. Full server response: {json.dumps(response_obj)}")
         except:
-            print("It looks like the Automatic1111 server is running, but it's not in API mode.")
+            print(
+                "It looks like the Automatic1111 server is running, but it's not in API mode.")
     else:
         print(response.content)
         print("An error occurred in the Automatic1111 server.")
+
 
 def create_temp_file(prefix, suffix=".png"):
     return tempfile.NamedTemporaryFile(prefix=prefix, suffix=suffix).name
@@ -281,7 +262,8 @@ def create_temp_file(prefix, suffix=".png"):
 def save_after_image(scene, filename_prefix, img_file):
     filename = f"{filename_prefix}.png"
     full_path_and_filename = os.path.join(
-        os.path.abspath(bpy.path.abspath(get_preferences().output_folder)), filename
+        os.path.abspath(bpy.path.abspath(
+            get_preferences().output_folder)), filename
     )
     try:
         copy_file(img_file, full_path_and_filename)
@@ -297,7 +279,8 @@ def get_absolute_path(path):
 
 
 def get_asset_path(filename):
-    asset = os.path.join(get_absolute_path(get_preferences().output_folder), filename)
+    asset = os.path.join(get_absolute_path(
+        get_preferences().output_folder), filename)
     return asset
 
 
@@ -308,98 +291,109 @@ def get_output_width(scene):
 def get_output_height(scene):
     return round(scene.render.resolution_y * scene.render.resolution_percentage / 100)
 
+
 def copy_file(src, dest):
     shutil.copy2(src, dest)
-    
+
+
 def get_width(self):
     return get_output_width(bpy.context.scene)
+
 
 def get_height(self):
     return get_output_height(bpy.context.scene)
 
+
 bpy.app.handlers.render_complete.clear()
 bpy.app.handlers.render_complete.append(render_complete_handler)
 
-class SDBLENDER_Properties_Canny(bpy.types.PropertyGroup):
-    model: bpy.props.StringProperty(name="Model", default="control_v11p_sd15_canny [d14c016b]")
-    # mask: bpy.props.StringProperty(name="Mask", default="")
-    weight: bpy.props.FloatProperty(name="Weight", default=1.2)
-    resize_mode: bpy.props.StringProperty(name="Resize Mode", default="Scale to Fit (Inner Fit)")
-    lowvram: bpy.props.BoolProperty(name="Low VRAM", default=False)
-    processor_res: bpy.props.IntProperty(name="Processor Resolution", default=64)
-    threshold_a: bpy.props.IntProperty(name="Threshold A", default=64)
-    threshold_b: bpy.props.IntProperty(name="Threshold B", default=64)
-    guidance: bpy.props.IntProperty(name="Guidance", default=1)
-    guidance_start: bpy.props.FloatProperty(name="Guidance Start", default=0.19)
-    guidance_end: bpy.props.FloatProperty(name="Guidance End", default=1)
-        
-class SDBLENDER_Properties_Depth(bpy.types.PropertyGroup):
-    model: bpy.props.StringProperty(name="Model", default="control_v11f1p_sd15_depth [cfd03158]")
-    # mask: bpy.props.StringProperty(name="Mask", default="")
-    weight: bpy.props.FloatProperty(name="Weight", default=1.2)
-    resize_mode: bpy.props.StringProperty(name="Resize Mode", default="Scale to Fit (Inner Fit)")
-    lowvram: bpy.props.BoolProperty(name="Low VRAM", default=False)
-    processor_res: bpy.props.IntProperty(name="Processor Resolution", default=64)
-    threshold_a: bpy.props.IntProperty(name="Threshold A", default=64)
-    threshold_b: bpy.props.IntProperty(name="Threshold B", default=64)
-    guidance: bpy.props.IntProperty(name="Guidance", default=1)
-    guidance_start: bpy.props.FloatProperty(name="Guidance Start", default=0.19)
-    guidance_end: bpy.props.FloatProperty(name="Guidance End", default=1)
-    
-class SDBLENDER_Properties_Bone(bpy.types.PropertyGroup):
-    model: bpy.props.StringProperty(name="Model", default="control_v11p_sd15_openpose [cab727d4]")
-    # mask: bpy.props.StringProperty(name="Mask", default="")
-    weight: bpy.props.FloatProperty(name="Weight", default=1.2)
-    resize_mode: bpy.props.StringProperty(name="Resize Mode", default="Scale to Fit (Inner Fit)")
-    lowvram: bpy.props.BoolProperty(name="Low VRAM", default=False)
-    processor_res: bpy.props.IntProperty(name="Processor Resolution", default=512)
-    guidance: bpy.props.IntProperty(name="Guidance", default=1)
-    guidance_start: bpy.props.FloatProperty(name="Guidance Start", default=0.00)
-    guidance_end: bpy.props.FloatProperty(name="Guidance End", default=1)
-    
-class SDBLENDER_Properties_Segmentation(bpy.types.PropertyGroup):
-    model: bpy.props.StringProperty(name="Model", default="control_v11p_sd15_seg [e1f51eb9]")
-    # mask: bpy.props.StringProperty(name="Mask", default="")
-    weight: bpy.props.FloatProperty(name="Weight", default=1.2)
-    resize_mode: bpy.props.StringProperty(name="Resize Mode", default="Scale to Fit (Inner Fit)")
-    lowvram: bpy.props.BoolProperty(name="Low VRAM", default=False)
-    processor_res: bpy.props.IntProperty(name="Processor Resolution", default=64)
-    threshold_a: bpy.props.IntProperty(name="Threshold A", default=64)
-    threshold_b: bpy.props.IntProperty(name="Threshold B", default=64)
-    guidance: bpy.props.IntProperty(name="Guidance", default=1)
-    guidance_start: bpy.props.FloatProperty(name="Guidance Start", default=0.19)
-    guidance_end: bpy.props.FloatProperty(name="Guidance End", default=1)
 
 def get_sampler_items(self, context):
     samplers_k_diffusion = [
-        ('Euler a', 'sample_euler_ancestral', ['k_euler_a', 'k_euler_ancestral'], {}),
+        ('Euler a', 'sample_euler_ancestral', [
+         'k_euler_a', 'k_euler_ancestral'], {}),
         ('Euler', 'sample_euler', ['k_euler'], {}),
         ('LMS', 'sample_lms', ['k_lms'], {}),
         ('Heun', 'sample_heun', ['k_heun'], {}),
-        ('DPM2', 'sample_dpm_2', ['k_dpm_2'], {'discard_next_to_last_sigma': True}),
-        ('DPM2 a', 'sample_dpm_2_ancestral', ['k_dpm_2_a'], {'discard_next_to_last_sigma': True}),
+        ('DPM2', 'sample_dpm_2', ['k_dpm_2'], {
+         'discard_next_to_last_sigma': True}),
+        ('DPM2 a', 'sample_dpm_2_ancestral', [
+         'k_dpm_2_a'], {'discard_next_to_last_sigma': True}),
         ('DPM++ 2S a', 'sample_dpmpp_2s_ancestral', ['k_dpmpp_2s_a'], {}),
         ('DPM++ 2M', 'sample_dpmpp_2m', ['k_dpmpp_2m'], {}),
         ('DPM++ SDE', 'sample_dpmpp_sde', ['k_dpmpp_sde'], {}),
         ('DPM fast', 'sample_dpm_fast', ['k_dpm_fast'], {}),
         ('DPM adaptive', 'sample_dpm_adaptive', ['k_dpm_ad'], {}),
         ('LMS Karras', 'sample_lms', ['k_lms_ka'], {'scheduler': 'karras'}),
-        ('DPM2 Karras', 'sample_dpm_2', ['k_dpm_2_ka'], {'scheduler': 'karras', 'discard_next_to_last_sigma': True}),
-        ('DPM2 a Karras', 'sample_dpm_2_ancestral', ['k_dpm_2_a_ka'], {'scheduler': 'karras', 'discard_next_to_last_sigma': True}),
-        ('DPM++ 2S a Karras', 'sample_dpmpp_2s_ancestral', ['k_dpmpp_2s_a_ka'], {'scheduler': 'karras'}),
-        ('DPM++ 2M Karras', 'sample_dpmpp_2m', ['k_dpmpp_2m_ka'], {'scheduler': 'karras'}),
-        ('DPM++ SDE Karras', 'sample_dpmpp_sde', ['k_dpmpp_sde_ka'], {'scheduler': 'karras'}),
+        ('DPM2 Karras', 'sample_dpm_2', ['k_dpm_2_ka'], {
+         'scheduler': 'karras', 'discard_next_to_last_sigma': True}),
+        ('DPM2 a Karras', 'sample_dpm_2_ancestral', ['k_dpm_2_a_ka'], {
+         'scheduler': 'karras', 'discard_next_to_last_sigma': True}),
+        ('DPM++ 2S a Karras', 'sample_dpmpp_2s_ancestral',
+         ['k_dpmpp_2s_a_ka'], {'scheduler': 'karras'}),
+        ('DPM++ 2M Karras', 'sample_dpmpp_2m',
+         ['k_dpmpp_2m_ka'], {'scheduler': 'karras'}),
+        ('DPM++ SDE Karras', 'sample_dpmpp_sde',
+         ['k_dpmpp_sde_ka'], {'scheduler': 'karras'}),
     ]
     items = [(s[0], s[0], "") for s in samplers_k_diffusion]
     return items
-    
+
+
+def get_modules(self, context):
+    cn_preprocessor_modules = [
+        ("none", "None", ""),
+        ("canny", "Canny", ""),
+        ("depth", "Depth", ""),
+        ("depth_leres", "Depth LeRes", ""),
+        ("depth_leres++", "Depth LeRes++", ""),
+        ("hed", "Hed", ""),
+        ("hed_safe", "Hed Safe", ""),
+        ("mediapipe_face", "MediaPipe Face", ""),
+        ("mlsd", "Mlsd", ""),
+        ("normal_map", "Normal Map", ""),
+        ("openpose", "OpenPose", ""),
+        ("openpose_hand", "OpenPose Hand", ""),
+        ("openpose_face", "OpenPose Face", ""),
+        ("openpose_faceonly", "OpenPose Face Only", ""),
+        ("openpose_full", "OpenPose Full", ""),
+        ("clip_vision", "Clip Vision", ""),
+        ("color", "Color", ""),
+        ("pidinet", "Pidinet", ""),
+        ("pidinet_safe", "Pidinet Safe", ""),
+        ("pidinet_sketch", "Pidinet Sketch", ""),
+        ("pidinet_scribble", "Pidinet Scribble", ""),
+        ("scribble_xdog", "Scribble Xdog", ""),
+        ("scribble_hed", "Scribble Hed", ""),
+        ("segmentation", "Segmentation", ""),
+        ("threshold", "Threshold", ""),
+        ("depth_zoe", "Depth Zoe", ""),
+        ("normal_bae", "Normal Bae", ""),
+        ("oneformer_coco", "Oneformer Coco", ""),
+        ("oneformer_ade20k", "Oneformer Ade20k", ""),
+        ("lineart", "Lineart", ""),
+        ("lineart_coarse", "Lineart Coarse", ""),
+        ("lineart_anime", "Lineart Anime", ""),
+        ("lineart_standard", "Lineart Standard", ""),
+        ("shuffle", "Shuffle", ""),
+        ("tile_resample", "Tile Resample", ""),
+        ("invert", "Invert", ""),
+        ("lineart_anime_denoise", "Lineart Anime Denoise", ""),
+        ("reference_only", "Reference Only", ""),
+        ("inpaint", "Inpaint", "")
+    ]
+    return cn_preprocessor_modules
+
+
 class OverrideSettingsItem(bpy.types.PropertyGroup):
     name: bpy.props.StringProperty(name="Name")
     value: bpy.props.IntProperty(name="Value")
-    
+
+
 class SDBLENDER_Properties(bpy.types.PropertyGroup):
     prompt: bpy.props.StringProperty(name="Prompt")
-    negative_prompt: bpy.props.StringProperty(name="Negative Prompt", default="lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry")
+    negative_prompt: bpy.props.StringProperty(
+        name="Negative Prompt", default="lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry")
     width: bpy.props.IntProperty(name="Width", get=get_width)
     height: bpy.props.IntProperty(name="Height", get=get_height)
     sampler_name: bpy.props.EnumProperty(
@@ -421,17 +415,21 @@ class SDBLENDER_Properties(bpy.types.PropertyGroup):
     hr_upscaler: bpy.props.EnumProperty(
         name="Upscalers",
         description="Choose an upscaler",
-        items=[('None', 'None', ''), ('Lanczos', 'Lanczos', ''), ('Nearest', 'Nearest', ''), ('ESRGAN_4x', 'ESRGAN_4x', ''), ('LDSR', 'LDSR', ''), ('R-ESRGAN 4x+', 'R-ESRGAN 4x+', ''), ('R-ESRGAN 4x+ Anime6B', 'R-ESRGAN 4x+ Anime6B', ''), ('ScuNET', 'ScuNET', ''), ('ScuNET PSNR', 'ScuNET PSNR', ''), ('SwinIR_4x', 'SwinIR_4x', '')]
+        items=[('None', 'None', ''), ('Lanczos', 'Lanczos', ''), ('Nearest', 'Nearest', ''), ('ESRGAN_4x', 'ESRGAN_4x', ''), ('LDSR', 'LDSR', ''), ('R-ESRGAN 4x+',
+                                                                                                                                                    'R-ESRGAN 4x+', ''), ('R-ESRGAN 4x+ Anime6B', 'R-ESRGAN 4x+ Anime6B', ''), ('ScuNET', 'ScuNET', ''), ('ScuNET PSNR', 'ScuNET PSNR', ''), ('SwinIR_4x', 'SwinIR_4x', '')]
     )
-    denoising_strength: bpy.props.FloatProperty(name="Denoising Strength", default=0.25)
+    denoising_strength: bpy.props.FloatProperty(
+        name="Denoising Strength", default=0.25)
     hr_second_pass_steps: bpy.props.IntProperty(name="HR Second Pass Steps")
     hr_resize_x: bpy.props.IntProperty(name="HR Resize X", min=0, max=2048)
     hr_resize_y: bpy.props.IntProperty(name="HR Resize Y", min=0, max=2048)
     firstphase_width: bpy.props.IntProperty(name="Firstphase Width")
     firstphase_height: bpy.props.IntProperty(name="Firstphase Height")
-    override_settings_restore_afterwards: bpy.props.BoolProperty(name="Override Settings Restore Afterwards")
+    override_settings_restore_afterwards: bpy.props.BoolProperty(
+        name="Override Settings Restore Afterwards")
     override_settings: bpy.props.CollectionProperty(type=OverrideSettingsItem)
-    
+
+
 class SDBLENDER_preferences(bpy.types.AddonPreferences):
     bl_idname = 'sd_blender'
 
@@ -448,7 +446,7 @@ class SDBLENDER_preferences(bpy.types.AddonPreferences):
         min=1,
         max=65535,
     )
-    
+
     output_folder: bpy.props.StringProperty(
         name="Output Folder",
         description="Select a directory for output files",
@@ -460,7 +458,8 @@ class SDBLENDER_preferences(bpy.types.AddonPreferences):
         name="OpenPose Models Directory",
         description="Select the directory containing OpenPose models",
         subtype='DIR_PATH',
-        default=os.path.normpath("C:\\Users\\Owner\\Documents\\GitHub\\openpose\\models\\")
+        default=os.path.normpath(
+            "C:\\Users\\Owner\\Documents\\GitHub\\openpose\\models\\")
     )
 
     def draw(self, context):
@@ -474,24 +473,19 @@ class SDBLENDER_preferences(bpy.types.AddonPreferences):
 
 class SDBLENDER_CONTROLNETProperties(bpy.types.PropertyGroup):
     is_using_ai: bpy.props.BoolProperty(name="Use AI", default=True)
-    is_send_canny: bpy.props.BoolProperty(name="Send Canny", default=False)
-    is_send_depth: bpy.props.BoolProperty(name="Send Depth", default=True)
-    is_send_bone: bpy.props.BoolProperty(name="Send Bone", default=False)
-    is_send_seg: bpy.props.BoolProperty(name="Send Segmentation", default=True)
-    dropdown: bpy.props.EnumProperty(
-        name="AI Options",
-        items=[
-            ('CANNY', "Canny", ""),
-            ('DEPTH', "Depth", ""),
-            ('BONE', "Bone", ""),
-            ('SEG', "Segmentation", "")
-        ],
-        default='CANNY'
+    controlnet1: bpy.props.EnumProperty(
+        name="Control Net 1",
+        items=get_modules
     )
-    canny: bpy.props.PointerProperty(type=SDBLENDER_Properties_Canny)
-    depth: bpy.props.PointerProperty(type=SDBLENDER_Properties_Depth)
-    bone: bpy.props.PointerProperty(type=SDBLENDER_Properties_Bone)
-    seg: bpy.props.PointerProperty(type=SDBLENDER_Properties_Segmentation)
+    controlnet2: bpy.props.EnumProperty(
+        name="Control Net 2",
+        items=get_modules
+    )
+    controlnet3: bpy.props.EnumProperty(
+        name="Control Net 3",
+        items=get_modules
+    )
+
 
 class SDBLENDER_PT_Panel(bpy.types.Panel):
     bl_idname = "SDBlender_PT_Panel"
@@ -530,12 +524,13 @@ class SDBLENDER_PT_Panel(bpy.types.Panel):
         layout.prop(sdblender, "firstphase_height")
         layout.prop(sdblender, "override_settings_restore_afterwards")
 
+
 class SDBLENDER_PT_ControlNet(bpy.types.Panel):
     bl_label = "Control Net"
     bl_idname = "SDBLENDER_PT_ControlNet"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
-    bl_category = 'SD Blender'  # Change to your preferred category
+    bl_category = 'SD Blender'
 
     def draw(self, context):
         layout = self.layout
@@ -543,18 +538,25 @@ class SDBLENDER_PT_ControlNet(bpy.types.Panel):
         props = context.scene.controlnet
 
         layout.prop(props, "is_using_ai")
-        layout.prop(props, "is_send_canny")
-        layout.prop(props, "is_send_depth")
-        layout.prop(props, "is_send_bone")
-        layout.prop(props, "is_send_seg")
-        layout.prop(props, "dropdown")
-        
-        dropdown_item = getattr(props, props.dropdown.lower())
+        layout.prop(props, "controlnet1")
+        layout.prop(props, "controlnet2")
+        layout.prop(props, "controlnet3")
 
-        for attr_name in dir(dropdown_item):
-            if attr_name.startswith("__") or 'bl_rna' in attr_name or 'rna_type' in attr_name or 'name' in attr_name:
-                continue
-            layout.prop(dropdown_item, attr_name)
+        def render_options(controlnet_name):
+            controlnet_value = getattr(props, controlnet_name)
+            if controlnet_value.lower() != "none":
+                layout.label(text=controlnet_name.capitalize() + " Options:")
+                controlnet_item = getattr(props, controlnet_value.lower())
+
+                for attr_name in dir(controlnet_item):
+                    if attr_name.startswith("__") or 'bl_rna' in attr_name or 'rna_type' in attr_name or 'name' in attr_name:
+                        continue
+                    layout.prop(controlnet_item, attr_name)
+                layout.separator()  # add a horizontal rule
+
+        for controlnet in ['controlnet1', 'controlnet2', 'controlnet3']:
+            render_options(controlnet)
+
 
 class SDBLENDER_Preferences_Panel(bpy.types.Panel):
     bl_label = "Preferences"
@@ -571,27 +573,25 @@ class SDBLENDER_Preferences_Panel(bpy.types.Panel):
         layout.label(text="Address: " + addon_prefs.address)
         layout.label(text="Port: " + str(addon_prefs.port))
         layout.label(text="Output Folder: " + addon_prefs.output_folder)
-        layout.operator("scene.setup_compositor_nodes")
-        
-class SDBLENDER_SetupCompositor_Operator(bpy.types.Operator):
-    bl_idname = "scene.setup_compositor_nodes"
-    bl_label = "Setup Compositor Nodes"
 
-    def execute(self, context):
-        check_compositor_and_create_nodes(context)
-        return {'FINISHED'}
-    
-class SDBLENDER_RenderFlagProperty(bpy.types.PropertyGroup):
-    flag: bpy.props.BoolProperty(name="Render Flag", default=False)
 
 def register():
-    bpy.types.Scene.sdblender = bpy.props.PointerProperty(type=SDBLENDER_Properties)  # Point to the property group
-    bpy.types.Scene.controlnet = bpy.props.PointerProperty(type=SDBLENDER_CONTROLNETProperties)
-    bpy.types.Scene.override_settings = bpy.props.CollectionProperty(type=OverrideSettingsItem)
-    bpy.types.Scene.render_flag = bpy.props.PointerProperty(type=SDBLENDER_RenderFlagProperty)
-    
+    classes = utils.create_properties_group(
+        constants.controlnet_models, constants.module_details)
+    for cls in classes:
+        pointer = bpy.props.PointerProperty(type=cls)
+        setattr(SDBLENDER_CONTROLNETProperties,
+                utils.extract_model_name(cls.__name__), pointer)
+
+    bpy.types.Scene.sdblender = bpy.props.PointerProperty(
+        type=SDBLENDER_Properties)  # Point to the property group
+    bpy.types.Scene.controlnet = bpy.props.PointerProperty(
+        type=SDBLENDER_CONTROLNETProperties)
+    bpy.types.Scene.override_settings = bpy.props.CollectionProperty(
+        type=OverrideSettingsItem)
+
+
 def unregister():
     del bpy.types.Scene.sdblender
     del bpy.types.Scene.override_settings
     del bpy.types.Scene.controlnet
-    del bpy.types.Scene.render_flag
