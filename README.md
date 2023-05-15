@@ -130,7 +130,6 @@ Your basic Stable Diffusion prompt settings and some other stuff I don't really 
 
 ## Future plans
 - reogranize repo
-- pull model names from webui rather than hard coding them
 - figure out what some of these parameters do so we can see if we still need all of them
 - tool tips, better help, improved readme
 - see if this works with a remote host like a runpod instance

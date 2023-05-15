@@ -1,12 +1,14 @@
 import bpy
 
+# TODO: add interrogate function
+
 headers = {
     "User-Agent": "Blender/" + bpy.app.version_string,
     "Accept": "*/*",
     "Accept-Encoding": "gzip, deflate, br",
 }
 
-model_list = [
+controlnet_models = [
     "none",
     "control_v11e_sd15_ip2p [c4bb465c]",
     "control_v11e_sd15_shuffle [526bfdae]",
@@ -24,7 +26,7 @@ model_list = [
     "control_v11p_sd15s2_lineart_anime [3825e83e]"
 ]
 
-controlnet_models = [
+controlnet_modules = [
     "none",
     "canny",
     "depth",

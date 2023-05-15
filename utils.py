@@ -5,22 +5,30 @@ from . import constants
 
 
 def transform_to_enum(model_list):
-    return [(model, model, "") for model in model_list]
+    enum_list = []
+    for model in model_list:
+        display_name = model.replace('_', ' ').title()
+        if model == 'depth_leres++':
+            display_name = "Depth Leres++"
+            enum_list.append(('depth_leres_plusplus', display_name, ""))
+        else:
+            enum_list.append((model, display_name, ""))
+    return enum_list
 
 
-def create_properties_group(controlnet_models, module_details):
+def create_properties_group(controlnet_modules, models, module_details):
     classes = []
 
-    for model in controlnet_models:
+    for model in controlnet_modules:
         if 'depth_leres++' == model:
             model = 'depth_leres_plusplus'
-
+            
         attrs = {
             "__annotations__": {
                 "model": bpy.props.EnumProperty(
                     name="Model",
-                    items=transform_to_enum(constants.model_list),
-                    default=constants.model_list[0] if constants.model_list else None,
+                    items=transform_to_enum(models),
+                    default=models[0] if models else None,
                 ),
                 "weight": bpy.props.FloatProperty(name="Weight", default=1.2),
                 "resize_mode": bpy.props.StringProperty(name="Resize Mode", default="Crop and Resize"),

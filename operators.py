@@ -11,14 +11,29 @@ import json
 from . import constants
 from . import utils
 
+controlnet_modules = constants.controlnet_modules
+controlnet_models = constants.controlnet_models
+valid_endpoint = False
+
 
 def get_sd_host():
     return "http://" + get_preferences().address + ':' + str(get_preferences().port) + "/sdapi/v1/"
 
 
+def get_controlnet_host():
+    return get_sd_host().replace("/sdapi/v1/", "") + "/controlnet/"
+
+
 def get_preferences():
     preferences = bpy.context.preferences.addons['sd_blender'].preferences
     return preferences
+
+
+def ping_api():
+    url = get_sd_host().replace("/sdapi/v1/", "")
+    response = requests.head(url, headers=constants.headers)
+
+    return response.status_code == 200
 
 
 @persistent
@@ -73,7 +88,8 @@ def request_caption(image_data, interrogator):
         "image": image_data,
         "model": interrogator
     }
-    response = requests.post(url, headers=constants.headers, data=json.dumps(data))
+    response = requests.post(
+        url, headers=constants.headers, data=json.dumps(data))
 
     if response.status_code == 200:
         caption = response.json()["caption"]
@@ -84,13 +100,39 @@ def request_caption(image_data, interrogator):
         return None
 
 
+def get_model_list():
+    url = get_controlnet_host() + "model_list"
+    response = requests.get(url)
+
+    if response.status_code == 200:
+        model_list = response.json()["model_list"]
+        return model_list
+    else:
+        print("Error while requesting model list:")
+        print(response.content)
+        return None
+
+
+def get_module_list():
+    url = get_controlnet_host() + "module_list?alias_names=false"
+    response = requests.get(url)
+
+    if response.status_code == 200:
+        module_list = response.json()["module_list"]
+        return module_list
+    else:
+        print("Error while requesting module list:")
+        print(response.content)
+        return None
+
+
 def send_to_api(scene):
     models = {
         "none": bpy.context.scene.controlnet.none,
         "canny": bpy.context.scene.controlnet.canny,
         "depth": bpy.context.scene.controlnet.depth,
         "depth_leres": bpy.context.scene.controlnet.depth_leres,
-        "depth_leres++": bpy.context.scene.controlnet.depth_leres_plusplus,
+        "depth_leresplusplus": bpy.context.scene.controlnet.depth_leres_plusplus,
         "hed": bpy.context.scene.controlnet.hed,
         "hed_safe": bpy.context.scene.controlnet.hed_safe,
         "mediapipe_face": bpy.context.scene.controlnet.mediapipe_face,
@@ -261,17 +303,13 @@ def handle_api_error(response):
             response_obj = response.json()
             detail = response_obj.get("detail")
             if detail == "Not Found":
-                print(
-                    f"It looks like the Automatic1111 server is running, but it's not in API mode. Full server response: {json.dumps(response_obj)}")
+                print( f"It looks like the Automatic1111 server is running, but it's not in API mode. Full server response: {json.dumps(response_obj)}")
             elif detail == "Sampler not found":
-                print(
-                    f"The sampler you selected is not available. Full server response: {json.dumps(response_obj)}")
+                print( f"The sampler you selected is not available. Full server response: {json.dumps(response_obj)}")
             else:
-                print(
-                    f"An error occurred in the Automatic1111 server. Full server response: {json.dumps(response_obj)}")
+                print(f"An error occurred in the Automatic1111 server. Full server response: {json.dumps(response_obj)}")
         except:
-            print(
-                "It looks like the Automatic1111 server is running, but it's not in API mode.")
+            print("It looks like the Automatic1111 server is running, but it's not in API mode.")
     else:
         print(response.content)
         print("An error occurred in the Automatic1111 server.")
@@ -336,7 +374,7 @@ class SDBLENDER_OT_interrogate(bpy.types.Operator):
     bl_idname = "sdblender.interrogate"
     bl_label = "Interrogate"
     bl_options = {'REGISTER', 'UNDO'}
-    
+
     @classmethod
     def poll(cls, context):
         return bpy.data.images.get('Render Result').has_data
@@ -345,12 +383,20 @@ class SDBLENDER_OT_interrogate(bpy.types.Operator):
         scene = context.scene
         interrogator = scene.interrogators.interrogator
 
-        bpy.data.images['Render Result'].save_render(get_asset_path('interrogate.png'))
+        bpy.data.images['Render Result'].save_render(
+            get_asset_path('interrogate.png'))
         image_data = get_image_data(get_asset_path('interrogate.png'))
+
+        # Report that the interrogator is starting
+        self.report({'INFO'}, "Starting the interrogator...")
+
         caption = request_caption(image_data, interrogator)
 
         if caption:
             context.scene.sdblender.prompt = caption
+
+            # Report that the interrogation is finished
+            self.report({'INFO'}, "Interrogation finished")
         else:
             self.report({'ERROR'}, "Failed to get caption from the API")
 
@@ -390,49 +436,54 @@ def get_sampler_items(self, context):
 
 
 def get_modules(self, context):
-    cn_preprocessor_modules = [
-        ("none", "None", ""),
-        ("canny", "Canny", ""),
-        ("depth", "Depth", ""),
-        ("depth_leres", "Depth LeRes", ""),
-        ("depth_leresplusplus", "Depth LeRes++", ""),
-        ("hed", "Hed", ""),
-        ("hed_safe", "Hed Safe", ""),
-        ("mediapipe_face", "MediaPipe Face", ""),
-        ("mlsd", "Mlsd", ""),
-        ("normal_map", "Normal Map", ""),
-        ("openpose", "OpenPose", ""),
-        ("openpose_hand", "OpenPose Hand", ""),
-        ("openpose_face", "OpenPose Face", ""),
-        ("openpose_faceonly", "OpenPose Face Only", ""),
-        ("openpose_full", "OpenPose Full", ""),
-        ("clip_vision", "Clip Vision", ""),
-        ("color", "Color", ""),
-        ("pidinet", "Pidinet", ""),
-        ("pidinet_safe", "Pidinet Safe", ""),
-        ("pidinet_sketch", "Pidinet Sketch", ""),
-        ("pidinet_scribble", "Pidinet Scribble", ""),
-        ("scribble_xdog", "Scribble Xdog", ""),
-        ("scribble_hed", "Scribble Hed", ""),
-        ("segmentation", "Segmentation", ""),
-        ("threshold", "Threshold", ""),
-        ("depth_zoe", "Depth Zoe", ""),
-        ("normal_bae", "Normal Bae", ""),
-        ("oneformer_coco", "Oneformer Coco", ""),
-        ("oneformer_ade20k", "Oneformer Ade20k", ""),
-        ("lineart", "Lineart", ""),
-        ("lineart_coarse", "Lineart Coarse", ""),
-        ("lineart_anime", "Lineart Anime", ""),
-        ("lineart_standard", "Lineart Standard", ""),
-        ("shuffle", "Shuffle", ""),
-        ("tile_resample", "Tile Resample", ""),
-        ("invert", "Invert", ""),
-        ("lineart_anime_denoise", "Lineart Anime Denoise", ""),
-        ("reference_only", "Reference Only", ""),
-        ("inpaint", "Inpaint", "")
-    ]
-    return cn_preprocessor_modules
-
+    global controlnet_modules
+    
+    if not controlnet_modules:
+        cn_preprocessor_modules = [
+            ("none", "None", ""),
+            ("canny", "Canny", ""),
+            ("depth", "Depth", ""),
+            ("depth_leres", "Depth LeRes", ""),
+            ("depth_leresplusplus", "Depth LeRes++", ""),
+            ("hed", "Hed", ""),
+            ("hed_safe", "Hed Safe", ""),
+            ("mediapipe_face", "MediaPipe Face", ""),
+            ("mlsd", "Mlsd", ""),
+            ("normal_map", "Normal Map", ""),
+            ("openpose", "OpenPose", ""),
+            ("openpose_hand", "OpenPose Hand", ""),
+            ("openpose_face", "OpenPose Face", ""),
+            ("openpose_faceonly", "OpenPose Face Only", ""),
+            ("openpose_full", "OpenPose Full", ""),
+            ("clip_vision", "Clip Vision", ""),
+            ("color", "Color", ""),
+            ("pidinet", "Pidinet", ""),
+            ("pidinet_safe", "Pidinet Safe", ""),
+            ("pidinet_sketch", "Pidinet Sketch", ""),
+            ("pidinet_scribble", "Pidinet Scribble", ""),
+            ("scribble_xdog", "Scribble Xdog", ""),
+            ("scribble_hed", "Scribble Hed", ""),
+            ("segmentation", "Segmentation", ""),
+            ("threshold", "Threshold", ""),
+            ("depth_zoe", "Depth Zoe", ""),
+            ("normal_bae", "Normal Bae", ""),
+            ("oneformer_coco", "Oneformer Coco", ""),
+            ("oneformer_ade20k", "Oneformer Ade20k", ""),
+            ("lineart", "Lineart", ""),
+            ("lineart_coarse", "Lineart Coarse", ""),
+            ("lineart_anime", "Lineart Anime", ""),
+            ("lineart_standard", "Lineart Standard", ""),
+            ("shuffle", "Shuffle", ""),
+            ("tile_resample", "Tile Resample", ""),
+            ("invert", "Invert", ""),
+            ("lineart_anime_denoise", "Lineart Anime Denoise", ""),
+            ("reference_only", "Reference Only", ""),
+            ("inpaint", "Inpaint", "")
+        ]
+        return cn_preprocessor_modules
+    else:
+        return utils.transform_to_enum(controlnet_modules)
+        
 
 class OverrideSettingsItem(bpy.types.PropertyGroup):
     name: bpy.props.StringProperty(name="Name")
@@ -609,23 +660,6 @@ class SDBLENDER_PT_ControlNet(bpy.types.Panel):
             render_options(controlnet)
 
 
-class SDBLENDER_Preferences_Panel(bpy.types.Panel):
-    bl_label = "Preferences"
-    bl_idname = "SDBLENDER_PT_preferences"
-    bl_space_type = 'VIEW_3D'
-    bl_region_type = 'UI'
-    bl_category = "SD Blender"
-
-    def draw(self, context):
-        layout = self.layout
-
-        addon_prefs = context.preferences.addons['sd_blender'].preferences
-
-        layout.label(text="Address: " + addon_prefs.address)
-        layout.label(text="Port: " + str(addon_prefs.port))
-        layout.label(text="Output Folder: " + addon_prefs.output_folder)
-
-
 class SDBLENDER_Interrogate_Panel(bpy.types.Panel):
     bl_label = "Interrogate"
     bl_idname = "SDBLENDER_PT_interrogate"
@@ -636,14 +670,20 @@ class SDBLENDER_Interrogate_Panel(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         interrogators = context.scene.interrogators
-        
+
         layout.prop(interrogators, "interrogator", text="Interrogator")
         layout.operator("sdblender.interrogate")
 
 
 def register():
+    valid_endpoint = ping_api()
+
+    if valid_endpoint:
+        controlnet_modules = get_module_list()
+        controlnet_models = get_model_list()
+        
     classes = utils.create_properties_group(
-        constants.controlnet_models, constants.module_details)
+        controlnet_modules, controlnet_models, constants.module_details)
     for cls in classes:
         pointer = bpy.props.PointerProperty(type=cls)
         setattr(SDBLENDER_CONTROLNETProperties,
