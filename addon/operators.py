@@ -7,8 +7,6 @@ import tempfile
 import base64
 import requests
 import json
-import bpy
-import os
 
 from . import constants
 from . import utils
@@ -21,6 +19,19 @@ def get_sd_host():
 def get_preferences():
     preferences = bpy.context.preferences.addons['sd_blender'].preferences
     return preferences
+
+
+@persistent
+def render_complete_handler(scene, context):
+    is_img_ready = bpy.data.images["Render Result"].has_data
+
+    if is_img_ready:
+        # Fetch the 'is_using_ai' property from the current scene
+        is_using_ai = bpy.context.scene.controlnet.is_using_ai
+        if is_using_ai:
+            send_to_api(bpy.context.scene)
+    else:
+        print("Rendered image is not ready.")
 
 
 def to_dict(obj):
@@ -56,17 +67,21 @@ def print_dict(d):
     print(json.dumps(transformed, indent=3))
 
 
-@persistent
-def render_complete_handler(scene, context):
-    is_img_ready = bpy.data.images["Render Result"].has_data
+def request_caption(image_data, interrogator):
+    url = get_sd_host() + "interrogate"
+    data = {
+        "image": image_data,
+        "model": interrogator
+    }
+    response = requests.post(url, headers=constants.headers, data=json.dumps(data))
 
-    if is_img_ready:
-        # Fetch the 'is_using_ai' property from the current scene
-        is_using_ai = bpy.context.scene.controlnet.is_using_ai
-        if is_using_ai:
-            send_to_api(bpy.context.scene)
+    if response.status_code == 200:
+        caption = response.json()["caption"]
+        return caption
     else:
-        print("Rendered image is not ready.")
+        print("Error while requesting caption:")
+        print(response.content)
+        return None
 
 
 def send_to_api(scene):
@@ -233,6 +248,13 @@ def handle_api_success(response, filename_prefix):
     return output_file
 
 
+def get_image_data(file_path):
+    with open(file_path, "rb") as image_file:
+        image_data = image_file.read()
+        encoded_image_data = base64.b64encode(image_data).decode("utf-8")
+    return encoded_image_data
+
+
 def handle_api_error(response):
     if response.status_code == 404:
         try:
@@ -304,8 +326,35 @@ def get_height(self):
     return get_output_height(bpy.context.scene)
 
 
-bpy.app.handlers.render_complete.clear()
-bpy.app.handlers.render_complete.append(render_complete_handler)
+def reset_render_complete_handler():
+    handler_list = bpy.app.handlers.render_complete
+    if render_complete_handler in handler_list:
+        handler_list.remove(render_complete_handler)
+
+
+class SDBLENDER_OT_interrogate(bpy.types.Operator):
+    bl_idname = "sdblender.interrogate"
+    bl_label = "Interrogate"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    @classmethod
+    def poll(cls, context):
+        return bpy.data.images.get('Render Result').has_data
+
+    def execute(self, context):
+        scene = context.scene
+        interrogator = scene.interrogators.interrogator
+
+        bpy.data.images['Render Result'].save_render(get_asset_path('interrogate.png'))
+        image_data = get_image_data(get_asset_path('interrogate.png'))
+        caption = request_caption(image_data, interrogator)
+
+        if caption:
+            context.scene.sdblender.prompt = caption
+        else:
+            self.report({'ERROR'}, "Failed to get caption from the API")
+
+        return {'FINISHED'}
 
 
 def get_sampler_items(self, context):
@@ -346,7 +395,7 @@ def get_modules(self, context):
         ("canny", "Canny", ""),
         ("depth", "Depth", ""),
         ("depth_leres", "Depth LeRes", ""),
-        ("depth_leres++", "Depth LeRes++", ""),
+        ("depth_leresplusplus", "Depth LeRes++", ""),
         ("hed", "Hed", ""),
         ("hed_safe", "Hed Safe", ""),
         ("mediapipe_face", "MediaPipe Face", ""),
@@ -430,6 +479,17 @@ class SDBLENDER_Properties(bpy.types.PropertyGroup):
     override_settings: bpy.props.CollectionProperty(type=OverrideSettingsItem)
 
 
+class SDBLENDER_Interrogators(bpy.types.PropertyGroup):
+    interrogator: bpy.props.EnumProperty(
+        name="Interrogator",
+        items=[
+            ("clip", "Clip", ""),
+            ("deepdanbooru", "DeepBooru", "")
+        ],
+        default="clip"
+    )
+
+
 class SDBLENDER_preferences(bpy.types.AddonPreferences):
     bl_idname = 'sd_blender'
 
@@ -454,21 +514,12 @@ class SDBLENDER_preferences(bpy.types.AddonPreferences):
         default=os.path.join(os.path.expanduser('~'), 'Pictures', 'blender'),
     )
 
-    openpose_models_folder: bpy.props.StringProperty(
-        name="OpenPose Models Directory",
-        description="Select the directory containing OpenPose models",
-        subtype='DIR_PATH',
-        default=os.path.normpath(
-            "C:\\Users\\Owner\\Documents\\GitHub\\openpose\\models\\")
-    )
-
     def draw(self, context):
         layout = self.layout
         layout.label(text="Blender Stable Diffusion Preferences")
         layout.prop(self, "address")
         layout.prop(self, "port")
         layout.prop(self, "output_folder")
-        layout.prop(self, "openpose_models_folder")  # add this line
 
 
 class SDBLENDER_CONTROLNETProperties(bpy.types.PropertyGroup):
@@ -501,12 +552,12 @@ class SDBLENDER_PT_Panel(bpy.types.Panel):
 
         layout.prop(sdblender, "prompt")
         layout.prop(sdblender, "negative_prompt")
-        layout.prop(sdblender, "width")
-        layout.prop(sdblender, "height")
-        layout.prop(sdblender, "sampler_index")
+        # layout.prop(sdblender, "width")
+        # layout.prop(sdblender, "height")
+        # layout.prop(sdblender, "sampler_index")
         layout.prop(sdblender, "sampler_name")
         layout.prop(sdblender, "batch_size")
-        layout.prop(sdblender, "n_iter")
+        # layout.prop(sdblender, "n_iter")
         layout.prop(sdblender, "steps")
         layout.prop(sdblender, "cfg_scale")
         layout.prop(sdblender, "seed")
@@ -575,6 +626,21 @@ class SDBLENDER_Preferences_Panel(bpy.types.Panel):
         layout.label(text="Output Folder: " + addon_prefs.output_folder)
 
 
+class SDBLENDER_Interrogate_Panel(bpy.types.Panel):
+    bl_label = "Interrogate"
+    bl_idname = "SDBLENDER_PT_interrogate"
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_category = "SD Blender"
+
+    def draw(self, context):
+        layout = self.layout
+        interrogators = context.scene.interrogators
+        
+        layout.prop(interrogators, "interrogator", text="Interrogator")
+        layout.operator("sdblender.interrogate")
+
+
 def register():
     classes = utils.create_properties_group(
         constants.controlnet_models, constants.module_details)
@@ -589,9 +655,16 @@ def register():
         type=SDBLENDER_CONTROLNETProperties)
     bpy.types.Scene.override_settings = bpy.props.CollectionProperty(
         type=OverrideSettingsItem)
+    bpy.types.Scene.interrogators = bpy.props.PointerProperty(
+        type=SDBLENDER_Interrogators)
+
+    bpy.app.handlers.render_complete.clear()
+    bpy.app.handlers.render_complete.append(render_complete_handler)
 
 
 def unregister():
     del bpy.types.Scene.sdblender
     del bpy.types.Scene.override_settings
     del bpy.types.Scene.controlnet
+
+    reset_render_complete_handler()

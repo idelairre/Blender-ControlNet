@@ -14,7 +14,7 @@ def create_properties_group(controlnet_models, module_details):
     for model in controlnet_models:
         if 'depth_leres++' == model:
             model = 'depth_leres_plusplus'
-            
+
         attrs = {
             "__annotations__": {
                 "model": bpy.props.EnumProperty(

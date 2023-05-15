@@ -1,11 +1,13 @@
 # Blender-ControlNet
 
-Using Multiple ControlNet in Blender.
+Using Multiple ControlNet in Blender. Now an addon courtesy of me! No more fiddling with variables in a script file, no need for any compositor node setups, just press `render` and it will send the render to your Stable Diffusion WebUI on completion. The result appears in your image viewer just like the original script. 
 
 ## Required
 
 - [AUTOMATIC1111/stable-diffusion-webui](https://github.com/AUTOMATIC1111/stable-diffusion-webui)
 - [Mikubill/sd-webui-controlnet](https://github.com/Mikubill/sd-webui-controlnet)
+- this addon correctly installed
+- brain capable of following instructions
 
 ## Usage
 
@@ -25,138 +27,112 @@ Please refer to the installation instructions from [Mikubill/sd-webui-controlnet
 - In new version of Mikubill/sd-webui-controlnet, you need to enable `Allow other script to control this extension` in settings for API access.
 - To enable Multi ControlNet, change `Multi ControlNet: Max models amount (requires restart)` in the settings. Note that you will need to restart the WebUI for changes to take effect.
 
-### 3. Copy and paste the `multicn.py` code into your blender Scripting pane.
+### 3. Install the addon
 
-### 4. How to use the script?
+Follow these steps to install the add-on in Blender courtesy of GPT-4 with some minor edits:
 
-Basically, the script utilizes Blender Compositor to generate the required maps and then sends them to AUTOMATIC1111.
+- **Option 1**: just use the tag release and install the addon like normal following the directions below.
 
-To generate the desired output, you need to make adjustments to either the code or Blender Compositor nodes before pressing `F12`. To simplify this process, I have provided a basic [Blender template](./blender_templates/multicn_depth%2Bseg.blend) that sends depth and segmentation maps to ControlNet.
+- **Option 2**: *The hard way.* Clone or download the repository as a `.zip`. If you download it as a `.zip` file you will have to extract the `addon` folder then recompress the contents, give it a sensible named like `blender_controlnet` making sure to avoid any dashes, e.g., `-`, in the folder name as this will break Blender.
 
-Here is a brief [tutorial](https://twitter.com/Songzi39590361/status/1632706795365072897) on how to modify to suit @toyxyz3's rig if you wish to send openpose/depth/canny maps.
+- Open Blender and go to `Edit > Preferences`
 
-**Notes**
+- In the Preferences window, navigate to the `Add-ons` tab.
 
-- Make sure you have the right name for `controlnet_model`, hash does matter. You can get your local installed ControlNet models list from [here](http://localhost:7860/docs#/default/model_list_controlnet_model_list_get).
+- Click the `Install` button at the top right corner of the window.
 
-### 5. Hit "Run Script"
+- Browse to the location where you downloaded the `.zip` archive, select it, and click `Install Add-on`
 
-Before you hit "Run Script", here are the parameters that you may want to modify in the scripts:
+- After the installation is complete, the add-on should appear in the list of installed add-ons. You can search for it by typing its name in the search bar.
 
-```
-# specify your images output folder
-IMAGE_FOLDER = "//sd_results"
+- Enable the add-on by clicking the checkbox next to its name.
 
-# if you don't want to send your maps to AI, set this option to False
-is_using_ai = True
+## The buttons
 
-# which maps are you going to send to AI
-is_send_canny = False
-is_send_depth = False
-is_send_bone = True
-is_send_seg = False
+**IMPORTANT**: Configure the add-on settings, such as the API `server address`, `port`, and `output folder`, by expanding the add-on panel and adjusting the options as needed. **This is not optional!**
 
-# prepare data for API
-params = {
-    "prompt": "a room",
-    "negative_prompt": "(worst quality:2), (low quality:2), (normal quality:2), lowres, normal quality",
-    "width": get_output_width(scene),
-    "height": get_output_height(scene),
-    "sampler_index": "DPM++ SDE Karras",
-    "sampler_name": "",
-    "batch_size": 1,
-    "n_iter": 1,
-    "steps": 20,
-    "cfg_scale": 7,
-    "seed": -1,
-    "subseed": -1,
-    "subseed_strength": 0,
-    "restore_faces": False,
-    "enable_hr": False,
-    "hr_scale": 1.5,
-    "hr_upscaler": "R-ESRGAN General WDN 4xV3",
-    "denoising_strength": 0.5,
-    "hr_second_pass_steps": 10,
-    "hr_resize_x": 0,
-    "hr_resize_y": 0,
-    "firstphase_width": 0,
-    "firstphase_height": 0,
-    "override_settings": {"CLIP_stop_at_last_layers": 2},
-    "override_settings_restore_afterwards": True,
-    "alwayson_scripts": {"controlnet": {"args": []}},
-}
+There is a little (read: a lot) of technical debt to the original script so I don't know what all these properties do GPT-4 will try it's best to explain the panels.
 
-canny_cn_units = {
-    "mask": "",
-    "module": "none",
-    "model": "diff_control_sd15_canny_fp16 [ea6e3b9c]",
-    "weight": 1.2,
-    "resize_mode": "Scale to Fit (Inner Fit)",
-    "lowvram": False,
-    "processor_res": 64,
-    "threshold_a": 64,
-    "threshold_b": 64,
-    "guidance": 1,
-    "guidance_start": 0.19,
-    "guidance_end": 1,
-    "guessmode": False,
-}
+**SD Blender:**
+Your basic Stable Diffusion prompt settings and some other stuff I don't really understand:
+- `prompt`:
+    A string property representing the prompt text for the AI model.
+- `negative_prompt`:
+    A string property representing the negative prompt text for the AI model. The default value includes common negative attributes like "lowres", "bad anatomy", "blurry", etc.
+- `width`:
+    An integer property representing the width of the output image. This property is read-only and is calculated based on the current scene's render settings. **IMPORTANT:** the width and height settings you use to render in Blender WILL crash your Stable Diffusion.
+- `height`:
+    An integer property representing the height of the output image. This property is read-only and is calculated based on the current scene's render settings.
+- `sampler_name`:
+    An enumeration property that allows the user to choose a sampler from a list of available samplers.
+- `sampler_index`:
+    An integer property representing the index of the selected sampler.
+- `batch_size`:
+    An integer property representing the batch size for processing images.
+- `n_iter`:
+    An integer property representing the number of iterations for the AI model.
+- `steps`:
+    An integer property representing the number of steps for the AI model.
+- `cfg_scale`:
+    An integer property representing the configuration scale for the AI model.
+- `seed`:
+    An integer property representing the random seed used by the AI model.
+- `subseed`:
+    An integer property representing the subseed value.
+- `subseed_strength`:
+    A float property representing the strength of the subseed.
+- `restore_faces`:
+    A boolean property indicating whether to restore faces in the output image.
+- `enable_hr`:
+    A boolean property indicating whether to enable high-resolution (HR) processing.
+- `hr_scale`:
+    A float property representing the scale factor for high-resolution processing.
+- `hr_upscaler`:
+    An enumeration property that allows the user to choose an upscaler from a list of available upscalers.
+- `denoising_strength`:
+    A float property representing the strength of denoising applied to the output image.
+- `hr_second_pass_steps`:
+    An integer property representing the number of steps for the second pass of high-resolution processing.
+- `hr_resize_x`:
+    An integer property representing the width of the resized high-resolution output image. The value is limited between 0 and 2048.
+- `hr_resize_y`:
+    An integer property representing the height of the resized high-resolution output image. The value is limited between 0 and 2048.
+- `firstphase_width`:
+    An integer property representing the width of the first phase output image.
+- `firstphase_height`:
+    An integer property representing the height of the first phase output image.
+- `override_settings_restore_afterwards`:
+    A boolean property indicating whether to restore the original settings after processing the image.
+- `override_settings`:
+    A collection property containing instances of the `OverrideSettingsItem` class, which represents individual settings to be overridden during processing.
 
-depth_cn_units = {
-    "mask": "",
-    "module": "none",
-    "model": "diff_control_sd15_depth_fp16 [978ef0a1]",
-    "weight": 1.2,
-    "resize_mode": "Scale to Fit (Inner Fit)",
-    "lowvram": False,
-    "processor_res": 64,
-    "threshold_a": 64,
-    "threshold_b": 64,
-    "guidance": 1,
-    "guidance_start": 0.19,
-    "guidance_end": 1,
-    "guessmode": False,
-}
+**Control Net**: properties for your nets, supports up to three control nets
+- `model`:
+    An enumeration property that allows the user to choose a ControlNet model from a list of available models.
+- `weight`:
+    A float property representing the weight parameter for ControlNet. The default value is 1.2.
+- `resize_mode`:
+    A string property representing the resize mode for the image processing. The default value is "Crop and Resize".
+- `lowvram`:
+    A boolean property indicating whether to enable the low VRAM mode for ControlNet. The default value is False.
+- `processor_res`:
+    An integer property representing the processor resolution for ControlNet. The default value is 512.
+- `guidance`:
+    An integer property representing the guidance value for ControlNet. The default value is 1.
+- `guidance_start`:
+    A float property representing the guidance start value for ControlNet. The default value is 0.00.
+- `guidance_end`:
+    A float property representing the guidance end value for ControlNet. The default value is 1.
 
-bone_cn_units = {
-    "mask": "",
-    "module": "none",
-    "model": "diff_control_sd15_openpose_fp16 [1723948e]",
-    "weight": 1.1,
-    "resize_mode": "Scale to Fit (Inner Fit)",
-    "lowvram": False,
-    "processor_res": 64,
-    "threshold_a": 64,
-    "threshold_b": 64,
-    "guidance": 1,
-    "guidance_start": 0,
-    "guidance_end": 1,
-    "guessmode": False,
-}
+**Interrogate**: image to text caption for when you don't want to prompt
+- Interrogator: `clip` or `deepdanbooru`
+- Interrogate: run the `clip` or `deepdanbooru` model you must have rendered at least once otherwise this option will be disabled. The analysis runs on your last render, not your viewport.
 
-seg_cn_units = {
-    "mask": "",
-    "module": "none",
-    "model": "diff_control_sd15_seg_fp16 [a1e85e27]",
-    "weight": 1,
-    "resize_mode": "Scale to Fit (Inner Fit)",
-    "lowvram": False,
-    "processor_res": 64,
-    "threshold_a": 64,
-    "threshold_b": 64,
-    "guidance": 1,
-    "guidance_start": 0,
-    "guidance_end": 1,
-    "guessmode": False,
-}
-```
-
-### 6. Hit **F12**, wait for it...
-
-## Bonus
-
-To create 150 ControlNet segmentation colors materials, run `seg.py`. Check out this [tweet](https://twitter.com/Songzi39590361/status/1631190450710409216) for instructions.
-
-## Todo
-
-- [ ] animation support
+## Future plans
+- reogranize repo
+- pull model names from webui rather than hard coding them
+- figure out what some of these parameters do so we can see if we still need all of them
+- tool tips, better help, improved readme
+- see if this works with a remote host like a runpod instance
+- figure out which preprocessors are compatible with what models so you're not hunting around for the matching model after selecting your preprocessor
+- see if we can get this merged back into the main repo
