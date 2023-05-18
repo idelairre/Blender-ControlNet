@@ -50,7 +50,7 @@ def to_blender_color(c):
     return c / 12.92 if c < 0.04045 else math.pow((c + 0.055) / 1.055, 2.4)
 
 
-filename = os.path.abspath(bpy.path.abspath("//color_coding_semantic_segmentation_classes.csv"))
+filename = os.path.abspath(bpy.path.abspath("./segmentation_colors.csv"))
 with open(filename) as csv_file:
     csv_reader = csv.reader(csv_file, delimiter=',')
     line_count = 0
